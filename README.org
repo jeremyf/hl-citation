@@ -1,0 +1,12 @@
+* Hl::Citation
+
+This is currently a prototype.
+
+I'm exploring if I can generate something similar to the Selected Publications section of [[https://biology.nd.edu/people/jason-mclachlan/][Jason McLachlan's departmental profile]] using Wikidata.
+
+First, I have [[https://scholia.toolforge.org/author/Q101570745][Professor McLachlan's Scholia profile]]; And [[https://www.wikidata.org/wiki/Q101570745][Q101570745 is Jason S McLachlan on Wikidata.org]].
+
+** Todo
+
+  - [X] Query Wikidata to gather enough data to make a passable quasi-citation.
+  - [ ] Create a more semantically rich version of that

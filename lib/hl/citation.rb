@@ -12,6 +12,10 @@ module Hl
     #
     # A quick and dirty method for generating citations based on query
     # results.
+    #
+    # @param author_id [String] The wikidata.org identifier for this author
+    #
+    # @return Hl::Citation
     def self.cited_publications_for(author_id: "Q101570745")
       Query::PublicationsForAuthor.new(author_id: author_id).query.each do |row|
 
@@ -195,6 +199,8 @@ module Hl
         def cache_key
           @author_id
         end
+
+        # @note This is a modified version of the underlying Sparql query: https://scholia.toolforge.org/author/Q101570745
         def sparql_template
           <<~'SPARQL'.chomp
             #defaultView:Table
