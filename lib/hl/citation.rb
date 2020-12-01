@@ -26,20 +26,45 @@ module Hl
         doi = row[:doi].value if row[:doi]
         venue = row[:venueLabel].value if row[:venueLabel]
         al = Hl::Citation::Query::AuthorList.new(publication_id: publication_id)
-        al.query.each do |author_row|
-          raw_author = author_row[:author]
-          full_name = raw_author.to_s.sub("UNRESOLVED: ", "")
-          authors << Hl::Citation::Name.new(full_name)
+        al.query.each do |solution|
+          authors << Structs::Author.new(solution: solution)
         end
-        print authors.join(", ")
+        print %(<span itemscope itemtype="https://schema.org/CreativeWork">)
+        print authors.map(&:to_html).join(", ")
         print ". "
-        print "#{publication_date}. " if publication_date
-        print "#{title}. ".sub(/\.\. $/, ". ")
-        print "#{venue}. " if venue
-        print "#{doi}. " if doi
+        print %(<time itemprop="dateCreated" datetime="#{publication_date}">#{publication_date}</time>. ) if publication_date
+        print %(<span itemprop="title">#{title}</span>. ).sub(".</span>.", ".</span>")
+        print %(#{venue}. ) if venue
+        print %(<span itemprop="identifier">#{doi}</span>. ) if doi
+        print "</span>"
         puts "\n"
       end
       self
+    end
+
+    module Structs
+      # load "/Users/jfriesen/git/hl-citation/lib/hl/citation.rb"; Hl::Citation.cited_publications_for
+      class Author
+        def initialize(solution:)
+          @solution = solution
+        end
+        attr_reader :solution
+
+        def author
+          solution[:author].value
+        end
+
+        def author_url
+          solution[:authorUrl].value
+        end
+
+        def to_html
+          %(<span itemprop="author" itemscope itemtype="http://schema.org/Person">
+          <span itemprop="name">#{author}</span>
+          <link itemprop="sameAs" href="#{author_url}" />
+          </span>)
+        end
+      end
     end
 
     # A utility class for converting a name into a citation
@@ -144,7 +169,7 @@ module Hl
                 ?author_statement ps:P50 ?author_ .
                 ?author_ rdfs:label ?author .
                 FILTER (LANG(?author) = 'en')
-                BIND(CONCAT("../author/", SUBSTR(STR(?author_), 32)) AS ?authorUrl)
+                BIND(CONCAT("https://www.wikidata.org/wiki/", SUBSTR(STR(?author_), 32)) AS ?authorUrl)
                 OPTIONAL {
                   ?author_statement pq:P1545 ?order_ .
                   BIND(xsd:integer(?order_) AS ?order)
@@ -161,7 +186,7 @@ module Hl
               {
                 wd:%<publication_id>s p:P2093 ?authorstring_statement .
                 ?authorstring_statement ps:P2093 ?author_
-                BIND(CONCAT("UNRESOLVED: ", ?author_) AS ?author)
+                BIND(?author_ AS ?author)
                 OPTIONAL {
                   ?authorstring_statement pq:P1545 ?order_ .
                   BIND(xsd:integer(?order_) AS ?order)

@@ -9,4 +9,5 @@ First, I have [[https://scholia.toolforge.org/author/Q101570745][Professor McLac
 ** Todo
 
   - [X] Query Wikidata to gather enough data to make a passable quasi-citation.
-  - [ ] Create a more semantically rich version of that
+  - [X] Create a more semantically rich version of the citation.
+  - [ ] Discuss with team, what steps could we take?
