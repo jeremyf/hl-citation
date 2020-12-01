@@ -101,6 +101,7 @@ module Hl
         def cache_prefix
           self.class.to_s.gsub(/\W+/,"-").downcase
         end
+
         def with_cache
           file_name = File.join(File.expand_path("../../tmp", __dir__), "#{cache_prefix}-#{cache_key}.obj")
           return Marshal.load(File.read(file_name)) if File.exist?(file_name)
@@ -132,8 +133,6 @@ module Hl
             SELECT
               # Author order
               ?order
-
-              ?academic_age
 
               # Author item and label
               ?author ?authorUrl ?authorDescription
@@ -168,15 +167,6 @@ module Hl
                   BIND(xsd:integer(?order_) AS ?order)
                 }
                 BIND(CONCAT("https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=", ENCODE_FOR_URI(?author_)) AS ?authorUrl)
-              }
-              OPTIONAL {
-                SELECT ?author_ (MAX(?academic_age_) AS ?academic_age) {
-                  wd:%<publication_id>s wdt:P50 ?author_ ;
-                               wdt:P577 ?publication_date .
-                  ?author_ ^wdt:P50 / wdt:P577 ?other_publication_date .
-                  BIND(YEAR(?publication_date) - YEAR(?other_publication_date) AS ?academic_age_)
-                }
-                GROUP BY ?author_
               }
             }
             ORDER BY ?order
