@@ -1,12 +1,67 @@
 # coding: utf-8
 require "hl/citation/version"
-
+require 'namae'
 module Hl
   module Citation
     class Error < StandardError; end
 
+    class Name
+      def initialize(string)
+        @name = Namae::Name.parse(string)
+      end
+
+      def to_s
+        [@name.send(:initials_of, @name.send(:given_part), dots: true), @name.send(:family_part)].join(" ")
+      end
+    end
+
     module Query
+      require 'sparql/client'
+      class Client
+        def initialize
+          @client =  SPARQL::Client.new(self.class.endpoint, method: :get, headers: { 'User-Agent' => self.class.user_agent })
+        end
+
+        def self.endpoint
+          @endpoint ||= "https://query.wikidata.org/sparql".freeze
+        end
+
+        def self.user_agent
+          @user_agent ||= "HL-Citation/0.0.1 (https://library.nd.edu ;jfriesen@nd.edu) sparql.gem/3.1.3".freeze
+        end
+
+        def query(spql)
+          @client.query(spql)
+        end
+      end
+
+      module WithClient
+        def client
+          @client ||= Client.new
+        end
+
+        def query(cached: true)
+          if cached
+            with_cache { client.query(to_sparql) }
+          else
+            client.query(to_sparql)
+          end
+        end
+
+        require 'json'
+        def with_cache
+          cache_prefix = self.class.to_s.gsub(/\W+/,"-").downcase
+          file_name = File.join(File.expand_path("../../tmp", __dir__), "#{cache_prefix}-#{cache_key}.obj")
+          return Marshal.load(File.read(file_name)) if File.exist?(file_name)
+
+          results = yield
+          File.open(file_name, "w+") { |f| f.puts Marshal.dump(results) }
+          return results
+        end
+      end
+
       class Publication
+        include WithClient
         def sparql_template
           spq = <<'SPARQL'.chop
 
@@ -123,8 +178,12 @@ ORDER BY ?order
 SPARQL
         end
 
-                def initialize(publication_id:)
+        def initialize(publication_id:)
           @publication_id = publication_id
+        end
+
+        def cache_key
+          @publication_id
         end
 
         def to_sparql
@@ -133,6 +192,7 @@ SPARQL
 
       end
       class AuthorList
+        include WithClient
         def sparql_template
           spq = <<'SPARQL'.chop
 # List of authors for a work
@@ -192,12 +252,18 @@ SPARQL
         def initialize(publication_id:)
           @publication_id = publication_id
         end
+
+        def cache_key
+          @publication_id
+        end
+
         def to_sparql
           sprintf(sparql_template, { publication_id: @publication_id })
         end
       end
 
       class PublicationsForAuthor
+        include WithClient
         def sparql_template
           sp = <<'SPARQL'.chop
 
@@ -209,6 +275,7 @@ SELECT
   (SAMPLE(?pages_) AS ?pages)
   ?venue ?venueLabel
   (GROUP_CONCAT(DISTINCT ?author_label; separator=", ") AS ?authors)
+  (GROUP_CONCAT(DISTINCT ?doi_; separator=", ") AS ?doi)
   (CONCAT("../authors/", GROUP_CONCAT(DISTINCT SUBSTR(STR(?author), 32); separator=",")) AS ?authorsUrl)
 WHERE {
   ?work wdt:P50 wd:%<author_id>s .
@@ -222,6 +289,7 @@ WHERE {
   BIND(xsd:date(?datetimes) AS ?dates)
   OPTIONAL { ?work wdt:P1104 ?pages_ }
   OPTIONAL { ?work wdt:P1433 ?venue }
+  OPTIONAL { ?work wdt:P356 ?doi_ }
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en,da,de,es,fr,jp,no,ru,sv,zh". }
 }
 GROUP BY ?work ?workLabel ?venue ?venueLabel
@@ -235,48 +303,37 @@ SPARQL
         def to_sparql
           sprintf(sparql_template, { author_id: @author_id })
         end
+
+        def cache_key
+          @author_id
+        end
       end
     end
   end
 end
 
 
-author = Hl::Citation::Query::AuthorList.new(publication_id: "Q61360184")
-publication = Hl::Citation::Query::Publication.new(publication_id: "Q61360184")
-publications_for_author = Hl::Citation::Query::PublicationsForAuthor.new(author_id: "Q101570745")
+# author = Hl::Citation::Query::AuthorList.new(publication_id: "Q61360184")
+# publication = Hl::Citation::Query::Publication.new(publication_id: "Q61360184")
+Hl::Citation::Query::PublicationsForAuthor.new(author_id: "Q101570745").query.each do |row|
 
-#gem install sparql
-#http://www.rubydoc.info/github/ruby-rdf/sparql/frames
-
-require 'sparql/client'
-
-endpoint = "https://query.wikidata.org/sparql"
-
-
-USER_AGENT = "HL-Citation/0.0.1 (https://library.nd.edu ;jfriesen@nd.edu) sparql.gem/3.1.3".freeze
-
-client = SPARQL::Client.new(endpoint, method: :get, headers: { 'User-Agent' => USER_AGENT })
-
-# author_results = client.query(author.to_sparql)
-# File.open("/Users/jfriesen/git/hl-citation/tmp/author.obj", "w+") do |f|
-#   f.puts Marshal.dump(author_results)
-# end
-
-# publication_results = client.query(publication.to_sparql)
-# File.open("/Users/jfriesen/git/hl-citation/tmp/publication.obj", "w+") do |f|
-#   f.puts Marshal.dump(publication_results)
-# end
-
-publications_for_author_results = client.query(publications_for_author.to_sparql)
-File.open("/Users/jfriesen/git/hl-citation/tmp/publications_for_author.obj", "w+") do |f|
-  f.puts Marshal.dump(publications_for_author_results)
+  publication_id = row[:work].to_s.split("/").last
+  title = row[:workLabel].to_s
+  authors = []
+  publication_date = Date.parse(row[:date].value).strftime("%Y") if row[:date]
+  doi = row[:doi].value if row[:doi]
+  venue = row[:venueLabel].value if row[:venueLabel]
+  al = Hl::Citation::Query::AuthorList.new(publication_id: publication_id)
+  al.query.each do |author_row|
+    raw_author = author_row[:author]
+    full_name = raw_author.to_s.sub("UNRESOLVED: ", "")
+    authors << Hl::Citation::Name.new(full_name)
+  end
+  print authors.join(", ")
+  print ". "
+  print "#{publication_date}. " if publication_date
+  print "#{title}. ".sub(/\.\. $/, ". ")
+  print "#{venue}. " if venue
+  print "#{doi}. " if doi
+  puts "\n"
 end
-
-# puts "Number of rows: #{rows.size}"
-# for row in rows
-#   for key,val in row do
-#     # print "#{key.to_s.ljust(10)}: #{val}\t"
-#     print "#{key}: #{val}\t"
-#   end
-#   print "\n"
-# end
