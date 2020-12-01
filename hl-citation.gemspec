@@ -24,7 +24,7 @@ Gem::Specification.new do |spec|
   spec.executables   = spec.files.grep(%r{^exe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "csl-ruby", "~> 1.5"
+  spec.add_dependency "csl", "~> 1.5"
   spec.add_dependency "namae", "~> 1.0"
   spec.add_dependency "sparql", "~> 3.1"
 end
